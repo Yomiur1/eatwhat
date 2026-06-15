@@ -798,8 +798,17 @@ function SearchingScreen({ memberList, roomCode, mode, onDone, isHost }) {
 // ─────────────────────────────────────────────────────────────────
 // SCREEN 8 — Random Result（只有房主能重選）
 // ─────────────────────────────────────────────────────────────────
-function RandomResultScreen({ restaurant, restaurants, roomCode, isHost, onRePickSame, onRetryMode, onHome }) {
+function RandomResultScreen({ restaurant, restaurants, roomCode, uid, onRePickSame, onRetryMode, onHome }) {
   const [show, setShow] = useState(false);
+  // 直接從 Firebase 取得房主，不依賴 props
+  const [hostUid, setHostUid] = useState('');
+  const isHost = !!uid && !!hostUid && uid === hostUid;
+
+  useEffect(() => {
+    const unsub = onValue(ref(db, `rooms/${roomCode}/host`), snap => setHostUid(snap.val() || ''));
+    return () => unsub();
+  }, [roomCode]);
+
   useEffect(() => { setTimeout(() => setShow(true), 300); }, [restaurant]);
 
   const confetti = Array.from({ length: 20 }, (_, i) => ({ x: (i * 43) % 100, delay: i * 0.07, color: [T.primary, T.accent, T.green, T.red][i % 4], dur: 1.2 + ((i * 31) % 10) * 0.15 }));
@@ -857,21 +866,24 @@ function RandomResultScreen({ restaurant, restaurants, roomCode, isHost, onRePic
 // ─────────────────────────────────────────────────────────────────
 // SCREEN 9 — Vote（只有房主能揭曉與重投，結果全員同步）
 // ─────────────────────────────────────────────────────────────────
-function VoteScreen({ uid, restaurants, roomCode, isHost, onRetryMode, onHome }) {
+function VoteScreen({ uid, restaurants, roomCode, onRetryMode, onHome }) {
   const [myVote, setMyVote] = useState(null);
   const [votes, setVotes] = useState({});
   const [revealed, setRevealed] = useState(false);
+  // 直接從 Firebase 取得房主，不依賴 props，確保準確
+  const [hostUid, setHostUid] = useState('');
+  const isHost = !!uid && !!hostUid && uid === hostUid;
 
-  // 即時同步票數
   useEffect(() => {
     const u1 = onValue(ref(db, `rooms/${roomCode}/votes`), snap => setVotes(snap.val() || {}));
-    // 同步「揭曉」狀態：房主更新 Firebase 後所有人一起看到結果
     const u2 = onValue(ref(db, `rooms/${roomCode}/status`), snap => {
       const status = snap.val();
       if (status === 'result_vote_revealed') setRevealed(true);
-      if (status === 'result_vote') { setRevealed(false); setMyVote(null); } // 重新投票時重置
+      if (status === 'result_vote') { setRevealed(false); setMyVote(null); }
     });
-    return () => { u1(); u2(); };
+    // 直接監聽 Firebase 的 host 欄位
+    const u3 = onValue(ref(db, `rooms/${roomCode}/host`), snap => setHostUid(snap.val() || ''));
+    return () => { u1(); u2(); u3(); };
   }, [roomCode]);
 
   const handleVote = async (id) => {
@@ -1126,8 +1138,8 @@ export default function App() {
       {screen === 'lobby'     && <LobbyScreen uid={uid} username={username} displayName={displayName} roomCode={roomCode} isHost={isHost} onProceed={handleProceed} onLeave={handleLeave} />}
       {screen === 'mode'      && <ModeScreen onMode={handleMode} isRetry={isRetry} isHost={isHost} />}
       {screen === 'searching' && <SearchingScreen memberList={memberList} roomCode={roomCode} mode={mode} onDone={handleSearchDone} isHost={isHost} />}
-      {screen === 'random'    && <RandomResultScreen restaurant={pick} restaurants={restaurants} roomCode={roomCode} isHost={isHost} onRePickSame={handleRePickSame} onRetryMode={handleRetryMode} onHome={handleHome} />}
-      {screen === 'vote'      && <VoteScreen uid={uid} restaurants={restaurants} roomCode={roomCode} isHost={isHost} onRetryMode={handleRetryMode} onHome={handleHome} />}
+      {screen === 'random'    && <RandomResultScreen restaurant={pick} restaurants={restaurants} roomCode={roomCode} uid={uid} onRePickSame={handleRePickSame} onRetryMode={handleRetryMode} onHome={handleHome} />}
+      {screen === 'vote'      && <VoteScreen uid={uid} restaurants={restaurants} roomCode={roomCode} onRetryMode={handleRetryMode} onHome={handleHome} />}
     </div>
   );
 }
