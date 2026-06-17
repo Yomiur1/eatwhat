@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import {
-  ref, set, get, onValue, update, remove,
+  ref, set, get, onValue, update, remove, onDisconnect,
 } from 'firebase/database';
 import {
   createUserWithEmailAndPassword, signInWithEmailAndPassword,
@@ -1018,13 +1018,29 @@ export default function App() {
             setUid(user.uid);
             setUsername(snap.val().username);
             setDisplayName(snap.val().displayName || snap.val().username);
+
+            // 離線或關閉網頁時，自動清除 activeRoom
+            const activeRoomRef = ref(db, `users/${user.uid}/activeRoom`);
+            onDisconnect(activeRoomRef).set(null);
+
             setScreen('home'); return;
           }
         } catch (_) {}
       }
       setScreen('login');
     });
-    return () => unsub();
+
+    // 關閉分頁/重新整理時也清除
+    const handleUnload = () => {
+      const currentUid = auth.currentUser?.uid;
+      if (currentUid) {
+        navigator.sendBeacon &&
+          update(ref(db, `users/${currentUid}`), { activeRoom: null });
+      }
+    };
+    window.addEventListener('beforeunload', handleUnload);
+
+    return () => { unsub(); window.removeEventListener('beforeunload', handleUnload); };
   }, []);
 
   // ── 核心：房間狀態同步監聽器（讓所有成員畫面跟著房主走）──────
